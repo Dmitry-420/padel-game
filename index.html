@@ -133,14 +133,11 @@
       playerZ: 7.1,
       opponentZ: -7.1,
 
-      // Движение игрока от сетки к заднему стеклу.
       playerMinZ: 1.8,
       playerMaxZ: 8.8,
       playerMoveSpeed: 4.8,
       wheelMoveStep: 0.65,
 
-      // Наклон ракетки относительно центра корта.
-      // 1.25 радиана ≈ 72°: ракетка почти горизонтальна.
       racketLeanAngle: 1.25,
       racketLeanZone: 1.8,
       racketLeanSpeed: 10,
@@ -163,7 +160,6 @@
       courtOffsetY: 0,
       courtOffsetZ: 0,
 
-      // Цвет бордового пола корта.
       courtFloorColor: "#3b0508",
     };
 
@@ -181,6 +177,7 @@
       events:    true,
       load:      true,
       hits:      true,
+      ai:        true,
       stateIntervalMs: 500,
     };
 
@@ -193,6 +190,7 @@
       hits:   "color:#ffd166",
       state:  "color:#b8cdd2",
       physics:"color:#6b7f85",
+      ai:     "color:#c792ff",
       warn:   "color:#ff8a8a;font-weight:bold",
     };
 
@@ -229,9 +227,10 @@
       console.log("player pos:", v3(player.root.position),
                   "| target:", v2(target),
                   "| targetDepth:", targetDepth.toFixed(2));
-      console.log("opponent pos:", v3(opponent.root.position));
+      console.log("opponent pos:", v3(opponent.root.position),
+                  "| aiLevel:", aiLevel.toFixed(2));
       console.log("score:", points, "| games:", games);
-      return { ball, velocity, player, opponent, points, games };
+      return { ball, velocity, player, opponent, points, games, aiLevel };
     };
 
     // --------------------------------------------------
@@ -279,7 +278,6 @@
       return mesh;
     }
 
-    // Тёмно-бордовый пол встроенного корта.
     const floorMaterial = new THREE.MeshStandardMaterial({
       color: CFG.courtFloorColor, roughness: 0.95
     });
@@ -415,9 +413,6 @@
       return wrapper;
     }
 
-    // Оставляем в GLB-корте только самый большой горизонтальный меш (пол).
-    // Всё остальное (стекло, рамы, сетка, логотипы, трибуны) — прячем.
-    // Пол получает один плоский MeshBasicMaterial без текстур.
     function keepOnlyCourtFloor(root, colorHex) {
       const floorMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(colorHex),
@@ -439,7 +434,6 @@
         return;
       }
 
-      // «Пол» — самый большой по площади горизонтальный меш.
       const horizontal = meshes.filter((m) => m.isThinY);
       const pool = horizontal.length ? horizontal : meshes;
       pool.sort((a, b) => b.areaXZ - a.areaXZ);
@@ -451,7 +445,6 @@
         "size=", v3(floor.size),
         "всего мешей:", meshes.length);
 
-      // Прячем всё, кроме пола; у пола ставим плоский бордовый материал.
       for (const m of meshes) {
         if (m === floor) {
           m.mesh.material = floorMat;
@@ -514,7 +507,6 @@
         if (results[3].status === "fulfilled" && results[3].value) {
           const model = results[3].value.scene;
 
-          // Прячем всё, кроме пола, и заливаем пол бордовым.
           keepOnlyCourtFloor(model, CFG.courtFloorColor);
 
           const rotated = new THREE.Group();
@@ -544,8 +536,6 @@
 
           scene.add(wrapper);
 
-          // Встроенный корт оставляем: линии, стекло, рамы, сетка.
-          // Пол у него тоже тёмно-бордовый, чтобы под GLB не было другого цвета.
           court.visible = true;
 
           log("load", "GLB корт добавлен, scale =", scale.toFixed(4),
@@ -829,6 +819,9 @@
       server = 0;
       targetDepth = CFG.playerZ;
       pressedKeys.clear();
+      aiLevel = 0.5;
+      aiLevelTimer = 0;
+      aiTargetTimer = 0;
       updateScore();
       $("overlay").classList.add("hidden");
       serve();
@@ -844,8 +837,13 @@
     });
 
     // --------------------------------------------------
-    // ИИ СОПЕРНИКА
+    // ИИ СОПЕРНИКА (динамический уровень)
     // --------------------------------------------------
+
+    let aiLevel = 0.5;        // 0 — слабый, 1 — сильный
+    let aiLevelTimer = 0;
+    let aiTargetTimer = 0;
+    let aiTargetCache = new THREE.Vector3(0, 1.4, CFG.opponentZ);
 
     function fold(value, limit) {
       const span = limit * 2;
@@ -856,56 +854,99 @@
         : span * 3 - wrapped;
     }
 
+    function updateAiLevel(dt) {
+      aiLevelTimer -= dt;
+      if (aiLevelTimer > 0) return;
+
+      aiLevelTimer = 3 + Math.random() * 3;
+
+      // Давление счёта: если ИИ ведёт — чуть расслабляется, если отстаёт — подтягивается.
+      const scorePressure = (points[1] - points[0]) * 0.06;
+
+      aiLevel = clamp(
+        aiLevel + (Math.random() - 0.5) * 0.45 - scorePressure,
+        0.15,
+        0.95
+      );
+
+      log("ai", `aiLevel -> ${aiLevel.toFixed(2)}`,
+          `(points ${points[0]}:${points[1]})`);
+    }
+
+    function predictBallAtOpponent() {
+      // Возвращает {x, y} точку, куда прилетит мяч на плоскости z=opponentZ.
+      // Учитывает отскоки от пола. Возвращает null, если мяч не летит к ИИ.
+      if (!(playing && receivingSide === 1)) return null;
+      if (Math.abs(velocity.z) < 0.01) return null;
+
+      const t = (CFG.opponentZ - ball.position.z) / velocity.z;
+      if (!(t > 0 && t < 3)) return null;
+
+      let x = ball.position.x + velocity.x * t;
+      x = fold(x, CFG.halfWidth - CFG.radius);
+
+      let y = ball.position.y;
+      let vy = velocity.y;
+
+      for (let left = t; left > 0;) {
+        const step = Math.min(left, 1 / 120);
+        vy -= CFG.gravity * step;
+        y += vy * step;
+
+        if (y < CFG.radius) {
+          y = CFG.radius;
+          vy = Math.abs(vy) * CFG.floorBounce;
+        }
+        left -= step;
+      }
+
+      return { x, y, t };
+    }
+
     function moveOpponent(dt) {
-      let aimX = 0;
-      let aimY = 1.4;
+      updateAiLevel(dt);
 
-      if (playing && receivingSide === 1) {
-        const t = Math.abs(velocity.z) > 0.01
-          ? (CFG.opponentZ - ball.position.z) / velocity.z
-          : -1;
+      aiTargetTimer -= dt;
 
-        if (t > 0 && t < 3) {
-          aimX = fold(
-            ball.position.x + velocity.x * t,
-            CFG.halfWidth - CFG.radius
-          );
+      if (aiTargetTimer <= 0) {
+        aiTargetTimer = (120 + (1 - aiLevel) * 220) / 1000; // 120..340 мс
 
-          let y = ball.position.y;
-          let vy = velocity.y;
+        let aimX = 0;
+        let aimY = 1.4;
 
-          for (let left = t; left > 0;) {
-            const step = Math.min(left, 1 / 120);
-            vy -= CFG.gravity * step;
-            y += vy * step;
+        const prediction = predictBallAtOpponent();
 
-            if (y < CFG.radius) {
-              y = CFG.radius;
-              vy = Math.abs(vy) * CFG.floorBounce;
-            }
-            left -= step;
-          }
+        if (prediction) {
+          // Ошибка тем больше, чем быстрее мяч и чем ниже уровень ИИ.
+          const speed = velocity.length();
+          const speedFactor = clamp((speed - 8) / 12, 0, 1);
+          const errorScale = speedFactor * (1 - aiLevel);
 
-          aimY = y;
+          const errX = (Math.random() * 2 - 1) * errorScale * 1.6;
+          const errY = (Math.random() * 2 - 1) * errorScale * 0.7;
+
+          aimX = prediction.x + errX;
+          aimY = prediction.y + errY;
         } else {
           aimX = ball.position.x;
           aimY = ball.position.y;
         }
+
+        aiTargetCache.set(
+          clamp(aimX, -4.3, 4.3),
+          clamp(aimY, 0.55, 3.3),
+          CFG.opponentZ
+        );
       }
 
-      const destination = new THREE.Vector3(
-        clamp(aimX, -4.3, 4.3),
-        clamp(aimY, 0.55, 3.3),
-        CFG.opponentZ
-      );
-
-      const delta = destination.sub(opponent.root.position);
+      const delta = aiTargetCache.clone().sub(opponent.root.position);
       const distance = delta.length();
 
       if (distance > 0) {
+        const speed = CFG.aiSpeed * (0.65 + 0.55 * aiLevel);
         opponent.root.position.addScaledVector(
           delta,
-          Math.min(1, CFG.aiSpeed * dt / distance)
+          Math.min(1, speed * dt / distance)
         );
       }
     }
@@ -934,22 +975,12 @@
       const t = -oldRelativeZ / relativeTravelZ;
       if (t < 0 || t > 1) return;
 
-      const x = THREE.MathUtils.lerp(
-        oldBall.x, ball.position.x, t
-      );
-      const y = THREE.MathUtils.lerp(
-        oldBall.y, ball.position.y, t
-      );
-      const z = THREE.MathUtils.lerp(
-        oldBall.z, ball.position.z, t
-      );
+      const x = THREE.MathUtils.lerp(oldBall.x, ball.position.x, t);
+      const y = THREE.MathUtils.lerp(oldBall.y, ball.position.y, t);
+      const z = THREE.MathUtils.lerp(oldBall.z, ball.position.z, t);
 
-      const px = THREE.MathUtils.lerp(
-        oldPaddle.x, position.x, t
-      );
-      const py = THREE.MathUtils.lerp(
-        oldPaddle.y, position.y, t
-      );
+      const px = THREE.MathUtils.lerp(oldPaddle.x, position.x, t);
+      const py = THREE.MathUtils.lerp(oldPaddle.y, position.y, t);
 
       const dx = x - px;
       const dy = y - py;
@@ -979,28 +1010,38 @@
       ball.position.set(x, y, z);
       paddle.impact = 1;
 
-      const aimX = side === 0
-        ? clamp(px * 0.45 + dx * 3, -4, 4)
-        : (Math.random() * 2 - 1) * 3.5;
+      let aimX;
+      let aimZ;
+      let flightTime;
 
-      const aimZ = side === 0
-        ? -(5 + Math.random() * 2.5)
-        : 5 + Math.random() * 2.5;
+      if (side === 0) {
+        // Игрок: целься глубже (вплоть до заднего стекла) и шире.
+        aimX = clamp(px * 0.45 + dx * 3.2, -4.5, 4.5);
+        aimZ = -(6 + Math.random() * 4.2); // -6..-10.2
+
+        // 20% свечей — высокая дуга, чтобы перелететь ИИ.
+        const lob = Math.random() < 0.2;
+        flightTime = lob
+          ? 2.1 + Math.random() * 0.7
+          : 1.45 + Math.random() * 0.2;
+      } else {
+        // ИИ: бьёт в твою сторону, тоже иногда глубоко.
+        aimX = (Math.random() * 2 - 1) * 4.5;
+        aimZ = 6 + Math.random() * 4.2;
+        flightTime = 1.45 + Math.random() * 0.2;
+      }
 
       log(
         "hits",
         `ПОПАДАНИЕ side=${side}`,
         "contact=", v3(ball.position),
         "dx=", dx.toFixed(2),
-        "dy=", dy.toFixed(2)
+        "dy=", dy.toFixed(2),
+        "aimZ=", aimZ.toFixed(2),
+        "flightTime=", flightTime.toFixed(2)
       );
 
-      launch(
-        side,
-        aimX,
-        aimZ,
-        1.45 + Math.random() * 0.2
-      );
+      launch(side, aimX, aimZ, flightTime);
     }
 
     // --------------------------------------------------
@@ -1040,6 +1081,7 @@
           `target=${v2(target)}`,
           `targetDepth=${targetDepth.toFixed(2)}`,
           `opponent=${v3(opponent.root.position)}`,
+          `aiLevel=${aiLevel.toFixed(2)}`,
           `bounces=${bounces}`,
           `landed=${landed}`,
           `crossedNet=${crossedNet}`,
@@ -1165,6 +1207,9 @@
 
         ball.position.x = sideLimit;
         velocity.x = -Math.abs(velocity.x) * CFG.glassBounce;
+
+        // Мяч остаётся на той же половине, но меняет направление по X.
+        // Получатель остаётся тем же — он должен успеть добежать.
       } else if (ball.position.x < -sideLimit) {
         log("events", `БОКОВОЕ СТЕКЛО слева x=${ball.position.x.toFixed(2)}`,
             `landed=${landed}`);
@@ -1189,6 +1234,14 @@
 
         ball.position.z = backLimit;
         velocity.z = -Math.abs(velocity.z) * CFG.glassBounce;
+
+        // Мяч отскочил от стекла на половине игрока (z>0) — теперь его
+        // должен отбивать игрок, даже если последним бил он.
+        if (playing && sideOf(ball.position.z) === 0) {
+          receivingSide = 0;
+          lastHitter = 1;
+          bounces = 1;   // стекло считается «после пола», второй отскок от пола — ошибка
+        }
       } else if (ball.position.z < -backLimit) {
         log("events", `ЗАДНЕЕ СТЕКЛО z=${ball.position.z.toFixed(2)}`,
             `landed=${landed}`, `vel.z=${velocity.z.toFixed(2)}`);
@@ -1199,6 +1252,14 @@
 
         ball.position.z = -backLimit;
         velocity.z = Math.abs(velocity.z) * CFG.glassBounce;
+
+        // Мяч отскочил от стекла на половине ИИ — теперь его должен
+        // отбивать ИИ.
+        if (playing && sideOf(ball.position.z) === 1) {
+          receivingSide = 1;
+          lastHitter = 0;
+          bounces = 1;
+        }
       }
 
       ballShadow.position.x = ball.position.x;
