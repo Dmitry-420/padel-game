@@ -167,6 +167,15 @@
     const clamp = THREE.MathUtils.clamp;
 
     // --------------------------------------------------
+    // ФИЗИКА УДАРА — скорость ракетки
+    // --------------------------------------------------
+
+    const playerPrevPos = new THREE.Vector3();
+    let playerVelX = 0;
+    let playerVelY = 0;
+    let playerVelTimer = 0;
+
+    // --------------------------------------------------
     // ЛОГИРОВАНИЕ
     // --------------------------------------------------
 
@@ -226,7 +235,9 @@
       console.log("ball pos:", v3(ball.position), "vel:", v3(velocity));
       console.log("player pos:", v3(player.root.position),
                   "| target:", v2(target),
-                  "| targetDepth:", targetDepth.toFixed(2));
+                  "| targetDepth:", targetDepth.toFixed(2),
+                  "| velX:", playerVelX.toFixed(2),
+                  "| velY:", playerVelY.toFixed(2));
       console.log("opponent pos:", v3(opponent.root.position),
                   "| aiLevel:", aiLevel.toFixed(2));
       console.log("score:", points, "| games:", games);
@@ -594,12 +605,13 @@
       if (raycaster.ray.intersectPlane(plane, intersection)) {
         target.set(
           clamp(intersection.x, -4.3, 4.3),
-          clamp(intersection.y, 0.55, 3.3)
+          clamp(intersection.y, 1.0, 3.3)
         );
       }
     }
 
     function rememberPointer(event) {
+      if (event.target && event.target.tagName === "BUTTON") return;
       pointer.set(
         event.clientX / innerWidth * 2 - 1,
         1 - event.clientY / innerHeight * 2
@@ -609,15 +621,8 @@
       updatePointerTarget();
     }
 
-    renderer.domElement.addEventListener(
-      "pointermove",
-      rememberPointer
-    );
-
-    renderer.domElement.addEventListener(
-      "pointerdown",
-      rememberPointer
-    );
+    window.addEventListener("pointermove", rememberPointer);
+    window.addEventListener("pointerdown", rememberPointer);
 
     window.addEventListener("keydown", (event) => {
       if (!depthKeys.has(event.code)) return;
@@ -677,6 +682,15 @@
 
       player.root.position.y +=
         (target.y - player.root.position.y) * follow;
+
+      // --- скорость ракетки для физики удара ---
+      playerVelTimer += dt;
+      if (playerVelTimer > 1 / 60) {
+        playerVelX = (player.root.position.x - playerPrevPos.x) / playerVelTimer;
+        playerVelY = (player.root.position.y - playerPrevPos.y) / playerVelTimer;
+        playerPrevPos.copy(player.root.position);
+        playerVelTimer = 0;
+      }
     }
 
     function updateRacketLean(paddle, dt) {
@@ -822,6 +836,10 @@
       aiLevel = 0.5;
       aiLevelTimer = 0;
       aiTargetTimer = 0;
+      playerPrevPos.copy(player.root.position);
+      playerVelX = 0;
+      playerVelY = 0;
+      playerVelTimer = 0;
       updateScore();
       $("overlay").classList.add("hidden");
       serve();
@@ -840,7 +858,7 @@
     // ИИ СОПЕРНИКА (динамический уровень)
     // --------------------------------------------------
 
-    let aiLevel = 0.5;        // 0 — слабый, 1 — сильный
+    let aiLevel = 0.5;
     let aiLevelTimer = 0;
     let aiTargetTimer = 0;
     let aiTargetCache = new THREE.Vector3(0, 1.4, CFG.opponentZ);
@@ -860,7 +878,6 @@
 
       aiLevelTimer = 3 + Math.random() * 3;
 
-      // Давление счёта: если ИИ ведёт — чуть расслабляется, если отстаёт — подтягивается.
       const scorePressure = (points[1] - points[0]) * 0.06;
 
       aiLevel = clamp(
@@ -874,8 +891,6 @@
     }
 
     function predictBallAtOpponent() {
-      // Возвращает {x, y} точку, куда прилетит мяч на плоскости z=opponentZ.
-      // Учитывает отскоки от пола. Возвращает null, если мяч не летит к ИИ.
       if (!(playing && receivingSide === 1)) return null;
       if (Math.abs(velocity.z) < 0.01) return null;
 
@@ -909,7 +924,7 @@
       aiTargetTimer -= dt;
 
       if (aiTargetTimer <= 0) {
-        aiTargetTimer = (120 + (1 - aiLevel) * 220) / 1000; // 120..340 мс
+        aiTargetTimer = (120 + (1 - aiLevel) * 220) / 1000;
 
         let aimX = 0;
         let aimY = 1.4;
@@ -917,13 +932,12 @@
         const prediction = predictBallAtOpponent();
 
         if (prediction) {
-          // Ошибка тем больше, чем быстрее мяч и чем ниже уровень ИИ.
           const speed = velocity.length();
           const speedFactor = clamp((speed - 8) / 12, 0, 1);
           const errorScale = speedFactor * (1 - aiLevel);
 
-          const errX = (Math.random() * 2 - 1) * errorScale * 1.6;
-          const errY = (Math.random() * 2 - 1) * errorScale * 0.7;
+          const errX = (Math.random() * 2 - 1) * errorScale * 2.2;
+          const errY = (Math.random() * 2 - 1) * errorScale * 1.0;
 
           aimX = prediction.x + errX;
           aimY = prediction.y + errY;
@@ -1015,17 +1029,42 @@
       let flightTime;
 
       if (side === 0) {
-        // Игрок: целься глубже (вплоть до заднего стекла) и шире.
-        aimX = clamp(px * 0.45 + dx * 3.2, -4.5, 4.5);
-        aimZ = -(6 + Math.random() * 4.2); // -6..-10.2
+        // --- ФИЗИКА КАК В ПОНГЕ ---
+        // Угол по X определяется:
+        //  1) hitOffsetX — куда попал мяч по ракетке (край = угол)
+        //  2) racketSwing — куда движется ракетка в момент удара
+        //  3) aimBias — позиция ракетки по X
+        const hitOffsetX = clamp(dx / CFG.hitWidth, -1, 1);
+        const racketSwing = clamp(playerVelX / 8, -1, 1);
+        const aimBias = px / CFG.halfWidth;
 
-        // 20% свечей — высокая дуга, чтобы перелететь ИИ.
-        const lob = Math.random() < 0.2;
-        flightTime = lob
+        const angle = clamp(
+          hitOffsetX * 0.55 + racketSwing * 0.65 + aimBias * 0.35,
+          -1, 1
+        );
+
+        // угол -> цель по X на стороне соперника
+        aimX = angle * (CFG.halfWidth - 0.4);
+
+        // Глубина: сверху (dy<0) — коротко, снизу (dy>0) — глубоко.
+        const depthBias = clamp(-dy / CFG.hitHeight, -1, 1);
+        aimZ = -(6.5 + depthBias * 1.5 + Math.random() * 2.0);
+
+        // Свеча: резко вверх или 12% шанс.
+        const isLob = playerVelY > 3.0 || Math.random() < 0.12;
+        flightTime = isLob
           ? 2.1 + Math.random() * 0.7
-          : 1.45 + Math.random() * 0.2;
+          : 1.4 + Math.random() * 0.25;
+
+        log("hits",
+          `PHYSICS hitOffsetX=${hitOffsetX.toFixed(2)}`,
+          `swing=${racketSwing.toFixed(2)}`,
+          `bias=${aimBias.toFixed(2)}`,
+          `-> angle=${angle.toFixed(2)}`,
+          `aimX=${aimX.toFixed(2)} aimZ=${aimZ.toFixed(2)}`,
+          `lob=${isLob}`);
       } else {
-        // ИИ: бьёт в твою сторону, тоже иногда глубоко.
+        // ИИ
         aimX = (Math.random() * 2 - 1) * 4.5;
         aimZ = 6 + Math.random() * 4.2;
         flightTime = 1.45 + Math.random() * 0.2;
@@ -1078,6 +1117,8 @@
           `ball=${v3(ball.position)}`,
           `vel=${v3(velocity)}`,
           `player=${v3(player.root.position)}`,
+          `velX=${playerVelX.toFixed(2)}`,
+          `velY=${playerVelY.toFixed(2)}`,
           `target=${v2(target)}`,
           `targetDepth=${targetDepth.toFixed(2)}`,
           `opponent=${v3(opponent.root.position)}`,
@@ -1207,9 +1248,6 @@
 
         ball.position.x = sideLimit;
         velocity.x = -Math.abs(velocity.x) * CFG.glassBounce;
-
-        // Мяч остаётся на той же половине, но меняет направление по X.
-        // Получатель остаётся тем же — он должен успеть добежать.
       } else if (ball.position.x < -sideLimit) {
         log("events", `БОКОВОЕ СТЕКЛО слева x=${ball.position.x.toFixed(2)}`,
             `landed=${landed}`);
@@ -1235,12 +1273,10 @@
         ball.position.z = backLimit;
         velocity.z = -Math.abs(velocity.z) * CFG.glassBounce;
 
-        // Мяч отскочил от стекла на половине игрока (z>0) — теперь его
-        // должен отбивать игрок, даже если последним бил он.
         if (playing && sideOf(ball.position.z) === 0) {
           receivingSide = 0;
           lastHitter = 1;
-          bounces = 1;   // стекло считается «после пола», второй отскок от пола — ошибка
+          bounces = 1;
         }
       } else if (ball.position.z < -backLimit) {
         log("events", `ЗАДНЕЕ СТЕКЛО z=${ball.position.z.toFixed(2)}`,
@@ -1253,8 +1289,6 @@
         ball.position.z = -backLimit;
         velocity.z = Math.abs(velocity.z) * CFG.glassBounce;
 
-        // Мяч отскочил от стекла на половине ИИ — теперь его должен
-        // отбивать ИИ.
         if (playing && sideOf(ball.position.z) === 1) {
           receivingSide = 1;
           lastHitter = 0;
