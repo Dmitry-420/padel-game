@@ -1,0 +1,1559 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#07151b">
+  <title>PRONINE — Padel Rally</title>
+
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #07151b;
+      color: white;
+      font-family: Arial, sans-serif;
+      overscroll-behavior: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    canvas { display: block; touch-action: none; }
+
+    #hud {
+      position: fixed;
+      top: calc(16px + env(safe-area-inset-top));
+      left: calc(20px + env(safe-area-inset-left));
+      pointer-events: none;
+      text-shadow: 0 2px 8px #000;
+      z-index: 2;
+    }
+    #brand { color: #88f5ce; letter-spacing: 4px; font-size: 12px; }
+    #score { font-size: 32px; margin-top: 10px; }
+    #games, #status { margin-top: 6px; font-size: 13px; }
+    #status { color: #b8cdd2; }
+
+    #help {
+      position: fixed;
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      left: 16px; right: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: #c0d5da;
+      pointer-events: none;
+      text-shadow: 0 2px 6px black;
+      z-index: 2;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: #03101899;
+      padding: 20px;
+      z-index: 10;
+    }
+    #overlay.hidden { display: none; }
+    .panel {
+      width: min(460px, 100%);
+      padding: 26px;
+      border: 1px solid #88f5ce44;
+      border-radius: 24px;
+      background: #07151bef;
+      text-align: center;
+    }
+    h1 { margin-top: 0; font-size: 26px; }
+    p { color: #b8cdd2; line-height: 1.55; font-size: 14px; }
+    button#start {
+      padding: 14px 26px;
+      border: 0;
+      border-radius: 30px;
+      background: #88f5ce;
+      color: #07151b;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 15px;
+    }
+    button#start:disabled { opacity: .5; cursor: wait; }
+
+    /* ---------- Мобильный UI ---------- */
+    #mobileUI {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+      display: none;
+    }
+    body.mobile #mobileUI { display: block; }
+
+    /* Джойстик */
+    #joystick {
+      position: absolute;
+      left: calc(20px + env(safe-area-inset-left));
+      bottom: calc(20px + env(safe-area-inset-bottom));
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      border: 2px solid #88f5ce55;
+      background: #07151b55;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    #knob {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 56px; height: 56px;
+      margin: -28px 0 0 -28px;
+      border-radius: 50%;
+      background: #88f5cecc;
+      border: 2px solid #ffffffaa;
+      transition: transform .04s linear;
+      pointer-events: none;
+    }
+
+    /* Зона свайпа-обзора */
+    #lookZone {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 55%;
+      height: 100%;
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    /* Кнопки */
+    .ctrlBtn {
+      position: absolute;
+      pointer-events: auto;
+      touch-action: none;
+      border-radius: 50%;
+      border: 2px solid #88f5ce77;
+      background: #07151bcc;
+      color: #88f5ce;
+      font-weight: bold;
+      font-size: 13px;
+      display: grid;
+      place-items: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #btnJump {
+      right: calc(20px + env(safe-area-inset-right));
+      bottom: calc(155px + env(safe-area-inset-bottom));
+      width: 74px; height: 74px;
+    }
+    #btnPause {
+      right: calc(20px + env(safe-area-inset-right));
+      top: calc(16px + env(safe-area-inset-top));
+      width: 54px; height: 54px;
+      font-size: 20px;
+    }
+    #btnHit {
+      right: calc(110px + env(safe-area-inset-right));
+      bottom: calc(20px + env(safe-area-inset-bottom));
+      width: 74px; height: 74px;
+      font-size: 12px;
+    }
+
+    #rotateHint {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: #031018f2;
+      z-index: 20;
+      text-align: center;
+      padding: 24px;
+      font-size: 16px;
+      color: #88f5ce;
+    }
+    body.mobile.portrait #rotateHint { display: flex; }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="hud">
+    <div id="brand">PRONINE / PADEL</div>
+    <div id="score">ТЫ 0 : 0 СОПЕРНИК</div>
+    <div id="games">Геймы: 0 : 0</div>
+    <div id="status">Загрузка моделей…</div>
+  </div>
+
+  <div id="help"></div>
+
+  <!-- Мобильное управление -->
+  <div id="mobileUI">
+    <div id="joystick"><div id="knob"></div></div>
+    <div id="lookZone"></div>
+    <div id="btnJump" class="ctrlBtn">JUMP</div>
+    <div id="btnHit" class="ctrlBtn">HIT</div>
+    <div id="btnPause" class="ctrlBtn">II</div>
+  </div>
+
+  <div id="rotateHint">
+    <div>Поверни телефон горизонтально 📱↻<br>для удобной игры</div>
+  </div>
+
+  <div id="overlay">
+    <div class="panel">
+      <h1>Padel Rally</h1>
+      <p id="message">
+        Ходи по своей половине корта клавишами WASD.
+        Мышью осматривайся.
+        Для удара зажми левую кнопку мыши и подставь ракетку под мяч.
+        Пробел — прыжок.
+      </p>
+      <button id="start" disabled>Загрузка…</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import {GLTFLoader} from "three/addons/loaders/GLTFLoader.js";
+    import {DRACOLoader} from "three/addons/loaders/DRACOLoader.js";
+
+    // --------------------------------------------------
+    // ПЛАТФОРМА
+    // --------------------------------------------------
+
+    const IS_TOUCH = window.matchMedia("(pointer: coarse)").matches
+                  || ("ontouchstart" in window && navigator.maxTouchPoints > 0);
+
+    document.body.classList.toggle("mobile", IS_TOUCH);
+
+    const $ = (id) => document.getElementById(id);
+    const clamp = THREE.MathUtils.clamp;
+
+    // --------------------------------------------------
+    // НАСТРОЙКИ
+    // --------------------------------------------------
+
+    const CFG = {
+      halfWidth: 5,
+      halfLength: 10,
+      wallHeight: 3,
+      netHeight: 0.92,
+
+      gravity: 9.81,
+      radius: 0.15,
+      floorBounce: 0.8,
+      glassBounce: 0.88,
+
+      playerZ: 7.1,
+      opponentZ: -7.1,
+
+      racketLeanAngle: 1.25,
+      racketLeanZone: 1.8,
+      racketLeanSpeed: 10,
+
+      hitWidth: 0.75,
+      hitHeight: 0.9,
+
+      aiSpeed: 4.2,
+
+      racketSize: 2.1,
+      racketOffsetY: -0.4,
+      racketRotation: [0, 0, 0],
+
+      courtRotationY: Math.PI / 2,
+      showCourtModel: true,
+
+      courtScale: 1,
+      courtOffsetX: 0,
+      courtOffsetY: 0,
+      courtOffsetZ: 0,
+
+      courtFloorColor: "#3b0508",
+    };
+
+    // --------------------------------------------------
+    // ЛОГИРОВАНИЕ
+    // --------------------------------------------------
+
+    const LOG = {
+      enabled: true,
+      state: false,
+      physics: false,
+      events: true,
+      load: true,
+      hits: true,
+      stateIntervalMs: 500,
+    };
+
+    const T0 = performance.now();
+    const logTime = () => ((performance.now() - T0) / 1000).toFixed(3) + "s";
+
+    const COLORS = {
+      events: "color:#88f5ce;font-weight:bold",
+      load:   "color:#7fb2ff",
+      hits:   "color:#ffd166",
+      warn:   "color:#ff8a8a;font-weight:bold",
+    };
+
+    function log(cat, ...args) {
+      if (!LOG.enabled || !LOG[cat]) return;
+      console.log(`%c[${logTime()}][${cat}]`, COLORS[cat] || "", ...args);
+    }
+    function warn(cat, ...args) {
+      if (!LOG.enabled) return;
+      console.warn(`%c[${logTime()}][${cat}]`, COLORS.warn, ...args);
+    }
+    const v3 = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`;
+
+    // --------------------------------------------------
+    // СЦЕНА
+    // --------------------------------------------------
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#07151b");
+
+    const camera = new THREE.PerspectiveCamera(
+      52, innerWidth / innerHeight, 0.05, 150
+    );
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !IS_TOUCH,
+      powerPreference: IS_TOUCH ? "default" : "high-performance",
+    });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    document.body.prepend(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight("#d9f6ff", "#17332c", 2.5));
+
+    const sun = new THREE.DirectionalLight("#ffffff", 3);
+    sun.position.set(-5, 12, 8);
+    scene.add(sun);
+
+    const rim = new THREE.DirectionalLight("#88ffd5", 1.8);
+    rim.position.set(5, 6, -10);
+    scene.add(rim);
+
+    // --------------------------------------------------
+    // ВСТРОЕННЫЙ КОРТ
+    // --------------------------------------------------
+
+    const court = new THREE.Group();
+    scene.add(court);
+
+    function box(w, h, d, x, y, z, material) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+      mesh.position.set(x, y, z);
+      court.add(mesh);
+      return mesh;
+    }
+
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      color: CFG.courtFloorColor, roughness: 0.95
+    });
+    box(10, 0.12, 20, 0, -0.07, 0, floorMaterial);
+
+    const white = new THREE.MeshBasicMaterial({color: "#e7fff8"});
+    for (const z of [-10, -7, 7, 10]) box(10, 0.008, 0.045, 0, 0.003, z, white);
+    for (const x of [-5, 5]) box(0.045, 0.008, 20, x, 0.003, 0, white);
+    for (const z of [-3.5, 3.5]) box(0.045, 0.008, 7, 0, 0.003, z, white);
+
+    const glass = new THREE.MeshPhysicalMaterial({
+      color: "#93e8ee",
+      transparent: true,
+      opacity: 0.12,
+      roughness: 0.15,
+      metalness: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    box(10, 3, 0.04, 0, 1.5, -10, glass);
+    box(10, 3, 0.04, 0, 1.5, 10, glass);
+    box(0.04, 3, 20, -5, 1.5, 0, glass);
+    box(0.04, 3, 20, 5, 1.5, 0, glass);
+
+    const frameMaterial = new THREE.MeshStandardMaterial({
+      color: "#17353c", roughness: 0.6
+    });
+    for (const x of [-5, 5]) {
+      for (const z of [-10, -5, 0, 5, 10]) {
+        box(0.065, 3, 0.065, x, 1.5, z, frameMaterial);
+      }
+      box(0.06, 0.06, 20, x, 3, 0, frameMaterial);
+    }
+
+    const netMaterial = new THREE.MeshBasicMaterial({
+      color: "#102b30",
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+    });
+    box(10, CFG.netHeight, 0.025, 0, CFG.netHeight / 2, 0, netMaterial);
+    box(10, 0.045, 0.045, 0, CFG.netHeight, 0, white);
+
+    // --------------------------------------------------
+    // РАКЕТКИ И МЯЧ
+    // --------------------------------------------------
+
+    function makePaddle(z, name) {
+      const root = new THREE.Group();
+      const swing = new THREE.Group();
+      const visual = new THREE.Group();
+
+      root.position.set(0, 1.4, z);
+      visual.position.y = CFG.racketOffsetY;
+      visual.rotation.set(...CFG.racketRotation);
+
+      root.add(swing);
+      swing.add(visual);
+      scene.add(root);
+
+      log("load", `создана ракетка "${name}" на z=${z}`);
+      return {root, swing, visual, impact: 0, name};
+    }
+
+    const player = makePaddle(CFG.playerZ, "player");
+    const opponent = makePaddle(CFG.opponentZ, "opponent");
+
+    // fallback-ракетка (чтобы игра запускалась, даже если GLB не загрузился)
+    function makeFallbackPaddle() {
+      const g = new THREE.Group();
+      const handle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.4, 10),
+        new THREE.MeshStandardMaterial({color: "#222", roughness: 0.6})
+      );
+      handle.position.y = -0.45;
+      g.add(handle);
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.55, 0.06),
+        new THREE.MeshStandardMaterial({color: "#88f5ce", roughness: 0.4, metalness: 0.2})
+      );
+      g.add(blade);
+      return g;
+    }
+
+    const ball = new THREE.Group();
+    scene.add(ball);
+
+    const fallbackBall = new THREE.Mesh(
+      new THREE.SphereGeometry(CFG.radius, 24, 16),
+      new THREE.MeshStandardMaterial({color: "#dfff42"})
+    );
+    ball.add(fallbackBall);
+
+    const ballShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.22, 24),
+      new THREE.MeshBasicMaterial({
+        color: "#00141a",
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+      })
+    );
+    ballShadow.rotation.x = -Math.PI / 2;
+    ballShadow.position.y = 0.012;
+    scene.add(ballShadow);
+
+    const velocity = new THREE.Vector3();
+
+    // --------------------------------------------------
+    // ЗАГРУЗКА GLB
+    // --------------------------------------------------
+
+    const draco = new DRACOLoader();
+    draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
+
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(draco);
+
+    function normalize(model, size) {
+      const content = new THREE.Group();
+      content.add(model);
+      content.updateMatrixWorld(true);
+
+      const bounds = new THREE.Box3().setFromObject(content);
+      const center = bounds.getCenter(new THREE.Vector3());
+      const dimensions = bounds.getSize(new THREE.Vector3());
+      content.position.sub(center);
+
+      const wrapper = new THREE.Group();
+      wrapper.add(content);
+      wrapper.scale.setScalar(
+        size / Math.max(dimensions.x, dimensions.y, dimensions.z, 0.001)
+      );
+      return wrapper;
+    }
+
+    function keepOnlyCourtFloor(root, colorHex) {
+      const floorMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(colorHex),
+      });
+      const meshes = [];
+      root.traverse((child) => {
+        if (!child.isMesh) return;
+        child.updateWorldMatrix(true, false);
+        const box = new THREE.Box3().setFromObject(child);
+        const size = box.getSize(new THREE.Vector3());
+        const areaXZ = size.x * size.z;
+        const isThinY = size.y <= Math.max(size.x, size.z) * 0.25;
+        meshes.push({mesh: child, size, areaXZ, isThinY});
+      });
+      if (!meshes.length) return;
+      const horizontal = meshes.filter((m) => m.isThinY);
+      const pool = horizontal.length ? horizontal : meshes;
+      pool.sort((a, b) => b.areaXZ - a.areaXZ);
+      const floor = pool[0];
+      for (const m of meshes) {
+        if (m === floor) {
+          m.mesh.material = floorMat;
+          m.mesh.visible = true;
+        } else {
+          m.mesh.visible = false;
+        }
+      }
+    }
+
+    let ready = false;
+
+    function setLoadStatus(text) {
+      $("status").textContent = text;
+    }
+
+    async function loadModels() {
+      const statusParts = [];
+      const update = () => setLoadStatus(statusParts.join(" · ") || "Загрузка…");
+
+      const track = (label, idx) => (ev) => {
+        if (ev && ev.total) {
+          statusParts[idx] = `${label} ${Math.round(ev.loaded / ev.total * 100)}%`;
+        } else {
+          statusParts[idx] = `${label} …`;
+        }
+        update();
+      };
+
+      try {
+        const results = await Promise.allSettled([
+          loader.loadAsync("./models/Glow-mint.min.glb", track("ракетка", 0)),
+          loader.loadAsync("./models/Raketka-pronine-control-it-nine.min.glb", track("ракетка 2", 1)),
+          loader.loadAsync("./models/tennis_ball.draco.min.glb", track("мяч", 2)),
+          CFG.showCourtModel
+            ? loader.loadAsync("./models/tennis_padel_galis_split23.glb", track("корт", 3))
+            : Promise.resolve(null),
+        ]);
+
+        log("load", "GLB загружены:",
+            results.map((r, i) => `${i}:${r.status}`).join(" | "));
+
+        const warnings = [];
+
+        // Ракетка игрока
+        if (results[0].status === "fulfilled") {
+          player.visual.add(normalize(results[0].value.scene, CFG.racketSize));
+        } else {
+          warn("load", "не удалось загрузить ракетку игрока, fallback");
+          player.visual.add(makeFallbackPaddle());
+          warnings.push("ракетка: fallback");
+        }
+
+        // Ракетка соперника
+        if (results[1].status === "fulfilled") {
+          opponent.visual.add(normalize(results[1].value.scene, CFG.racketSize));
+        } else if (results[0].status === "fulfilled") {
+          opponent.visual.add(normalize(results[0].value.scene.clone(true), CFG.racketSize));
+          warnings.push("соперник: копия ракетки игрока");
+        } else {
+          opponent.visual.add(makeFallbackPaddle());
+          warnings.push("соперник: fallback");
+        }
+
+        // Мяч
+        if (results[2].status === "fulfilled") {
+          ball.remove(fallbackBall);
+          ball.add(normalize(results[2].value.scene, CFG.radius * 2));
+        } else {
+          warnings.push("мяч: fallback-сфера");
+        }
+
+        // Корт
+        if (results[3].status === "fulfilled" && results[3].value) {
+          const model = results[3].value.scene;
+          keepOnlyCourtFloor(model, CFG.courtFloorColor);
+
+          const rotated = new THREE.Group();
+          rotated.add(model);
+          rotated.rotation.y = CFG.courtRotationY;
+          rotated.updateMatrixWorld(true);
+
+          const bounds = new THREE.Box3().setFromObject(rotated);
+          const size = bounds.getSize(new THREE.Vector3());
+          const center = bounds.getCenter(new THREE.Vector3());
+          const scale = 20 / Math.max(size.x, size.z, 0.001) * CFG.courtScale;
+
+          const centered = new THREE.Group();
+          centered.add(rotated);
+          centered.position.set(-center.x, -bounds.min.y, -center.z);
+
+          const wrapper = new THREE.Group();
+          wrapper.add(centered);
+          wrapper.scale.setScalar(scale);
+          wrapper.position.set(CFG.courtOffsetX, CFG.courtOffsetY, CFG.courtOffsetZ);
+          scene.add(wrapper);
+        } else if (CFG.showCourtModel) {
+          warnings.push("корт: встроенный");
+        }
+
+        ready = true;
+        $("start").disabled = false;
+        $("start").textContent = "Начать матч";
+        setLoadStatus(warnings.join(" · ") || "Готово");
+      } catch (error) {
+        warn("load", "ошибка загрузки моделей:", error);
+        // всё равно даём играть с fallback
+        player.visual.add(makeFallbackPaddle());
+        opponent.visual.add(makeFallbackPaddle());
+        ready = true;
+        $("start").disabled = false;
+        $("start").textContent = "Начать матч";
+        setLoadStatus("Модели не загрузились — fallback");
+      }
+    }
+
+    // --------------------------------------------------
+    // УПРАВЛЕНИЕ
+    // --------------------------------------------------
+
+    const FPS = {
+      eyeHeight: 1.68,
+      moveSpeed: 4.8,
+      acceleration: 16,
+      braking: 20,
+      bodyRadius: 0.4,
+      minZ: 0.95,
+      maxZ: CFG.halfLength - 0.4,
+      lookSensitivity: 0.0022,
+      maxPitch: 1.12,
+      jumpSpeed: 4.5,
+      jumpGravity: 12,
+      racketRestX: 0.48,
+      racketRestY: -0.48,
+      racketDistance: 0.95,
+      racketSensitivity: 0.006,
+      racketRangeX: 1.25,
+      racketRangeY: 1.1,
+      racketFollowSpeed: 24,
+      racketReturnSpeed: 8,
+    };
+
+    const playerBody = {
+      position: new THREE.Vector3(0, 0, Math.min(CFG.playerZ + 1.1, FPS.maxZ)),
+      velocity: new THREE.Vector3(),
+      yaw: 0,
+      pitch: -0.08,
+      jumpHeight: 0,
+      jumpVelocity: 0,
+      grounded: true,
+    };
+
+    let matchStarted = false;
+    let gamePaused = false;   // <— отдельный флаг паузы
+    let isSwinging = false;
+
+    const pressedKeys = new Set();
+    const movementKeys = new Set([
+      "KeyW","KeyA","KeyS","KeyD",
+      "ArrowUp","ArrowLeft","ArrowDown","ArrowRight",
+    ]);
+
+    const racketTarget = new THREE.Vector2();
+    const racketOffset = new THREE.Vector2();
+    const localRacketPosition = new THREE.Vector3();
+    const desiredRacketPosition = new THREE.Vector3();
+
+    function hasPointerLock() {
+      return document.pointerLockElement === renderer.domElement;
+    }
+
+    function requestGamePointerLock() {
+      if (IS_TOUCH) return;         // на мобилке pointer lock не нужен
+      if (hasPointerLock()) return;
+      try {
+        const request = renderer.domElement.requestPointerLock();
+        if (request && typeof request.catch === "function") {
+          request.catch(() => { if (matchStarted) pauseGame(); });
+        }
+      } catch {
+        if (matchStarted) pauseGame();
+      }
+    }
+
+    function pauseGame() {
+      if (!matchStarted) return;
+      gamePaused = true;
+      clearPlayerInput();
+      showPauseOverlay();
+    }
+
+    function resumeGame() {
+      if (!matchStarted) return;
+      gamePaused = false;
+      $("overlay").classList.add("hidden");
+      if (!IS_TOUCH) requestGamePointerLock();
+    }
+
+    function showPauseOverlay() {
+      $("overlay").classList.remove("hidden");
+      $("message").textContent = IS_TOUCH
+        ? "Пауза. Нажми «Продолжить», чтобы вернуться на корт."
+        : "Пауза. Нажми «Продолжить». WASD — ходьба, мышь — обзор, ЛКМ — ракетка, пробел — прыжок.";
+      $("start").disabled = false;
+      $("start").textContent = "Продолжить";
+    }
+
+    function clearPlayerInput() {
+      pressedKeys.clear();
+      isSwinging = false;
+      playerBody.velocity.set(0, 0, 0);
+      joy.active = false;
+      joy.x = 0; joy.y = 0;
+      if (knobEl) knobEl.style.transform = "translate(0,0)";
+      lookPointerId = null;
+      racketPointerId = null;
+    }
+
+    // ----- Десктоп: мышь + pointer lock -----
+    document.addEventListener("pointerlockchange", () => {
+      if (!matchStarted || IS_TOUCH) return;
+      if (hasPointerLock()) {
+        gamePaused = false;
+        $("overlay").classList.add("hidden");
+      } else {
+        pauseGame();
+      }
+    });
+    document.addEventListener("pointerlockerror", () => {
+      if (!matchStarted || IS_TOUCH) return;
+      pauseGame();
+      $("message").textContent =
+        "Браузер не разрешил захватить курсор. Нажми «Продолжить» ещё раз. " +
+        "Если игра открыта внутри встроенного окна, открой её в отдельной вкладке.";
+    });
+
+    // Общий обработчик движения мыши (desktop)
+    document.addEventListener("mousemove", (event) => {
+      if (IS_TOUCH || !matchStarted || gamePaused || !hasPointerLock()) return;
+
+      if (isSwinging) {
+        racketTarget.x = clamp(
+          racketTarget.x + event.movementX * FPS.racketSensitivity,
+          -FPS.racketRangeX, FPS.racketRangeX
+        );
+        racketTarget.y = clamp(
+          racketTarget.y - event.movementY * FPS.racketSensitivity,
+          -FPS.racketRangeY, FPS.racketRangeY
+        );
+      } else {
+        playerBody.yaw -= event.movementX * FPS.lookSensitivity;
+        playerBody.pitch = clamp(
+          playerBody.pitch - event.movementY * FPS.lookSensitivity,
+          -FPS.maxPitch, FPS.maxPitch
+        );
+        updateFirstPersonCamera();
+      }
+    });
+
+    renderer.domElement.addEventListener("mousedown", (event) => {
+      if (IS_TOUCH) return;
+      if (event.button !== 0 || !matchStarted || gamePaused) return;
+      event.preventDefault();
+      if (!hasPointerLock()) { requestGamePointerLock(); return; }
+      isSwinging = true;
+    });
+
+    document.addEventListener("mouseup", (event) => {
+      if (IS_TOUCH) return;
+      if (event.button === 0) isSwinging = false;
+    });
+
+    renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    // ----- Клавиатура -----
+    window.addEventListener("keydown", (event) => {
+      if (!matchStarted || gamePaused) return;
+
+      if (movementKeys.has(event.code)) {
+        event.preventDefault();
+        pressedKeys.add(event.code);
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (!event.repeat && playerBody.grounded) {
+          playerBody.grounded = false;
+          playerBody.jumpVelocity = FPS.jumpSpeed;
+        }
+        return;
+      }
+
+      if (event.code === "KeyR" && !event.repeat && ready) {
+        event.preventDefault();
+        startMatch();
+      }
+
+      if (event.code === "Escape" && !IS_TOUCH) {
+        // Esc автоматически снимет pointer lock → сработает pointerlockchange → pause
+      }
+    });
+
+    window.addEventListener("keyup", (event) => {
+      pressedKeys.delete(event.code);
+    });
+
+    window.addEventListener("blur", () => {
+      clearPlayerInput();
+      if (!IS_TOUCH && hasPointerLock()) document.exitPointerLock();
+      if (matchStarted) pauseGame();
+    });
+
+    // --------------------------------------------------
+    // МОБИЛЬНОЕ УПРАВЛЕНИЕ (Pointer Events)
+    // --------------------------------------------------
+
+    const joy = { active: false, pointerId: null, x: 0, y: 0 };
+    const knobEl = $("knob");
+    const joyEl = $("joystick");
+    const lookEl = $("lookZone");
+
+    let lookPointerId = null;
+    let lookLastX = 0, lookLastY = 0;
+
+    let racketPointerId = null;
+    let racketLastX = 0, racketLastY = 0;
+
+    const JOY_RADIUS = 50;
+
+    function joySetFromEvent(ev) {
+      const rect = joyEl.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      let dx = ev.clientX - cx;
+      let dy = ev.clientY - cy;
+      const len = Math.hypot(dx, dy);
+      if (len > JOY_RADIUS) {
+        dx = dx / len * JOY_RADIUS;
+        dy = dy / len * JOY_RADIUS;
+      }
+      joy.x = dx / JOY_RADIUS;
+      joy.y = dy / JOY_RADIUS;
+      knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
+
+    joyEl.addEventListener("pointerdown", (ev) => {
+      if (!matchStarted || gamePaused) return;
+      ev.preventDefault();
+      joy.active = true;
+      joy.pointerId = ev.pointerId;
+      joyEl.setPointerCapture(ev.pointerId);
+      joySetFromEvent(ev);
+    });
+
+    joyEl.addEventListener("pointermove", (ev) => {
+      if (!joy.active || ev.pointerId !== joy.pointerId) return;
+      ev.preventDefault();
+      joySetFromEvent(ev);
+    });
+
+    const joyEnd = (ev) => {
+      if (ev.pointerId !== joy.pointerId) return;
+      joy.active = false;
+      joy.pointerId = null;
+      joy.x = 0; joy.y = 0;
+      knobEl.style.transform = "translate(0,0)";
+    };
+    joyEl.addEventListener("pointerup", joyEnd);
+    joyEl.addEventListener("pointercancel", joyEnd);
+    joyEl.addEventListener("pointerleave", joyEnd);
+
+    // Свайп-обзор
+    lookEl.addEventListener("pointerdown", (ev) => {
+      if (!matchStarted || gamePaused) return;
+      if (lookPointerId !== null) return;
+      ev.preventDefault();
+      lookPointerId = ev.pointerId;
+      lookLastX = ev.clientX;
+      lookLastY = ev.clientY;
+      lookEl.setPointerCapture(ev.pointerId);
+    });
+
+    lookEl.addEventListener("pointermove", (ev) => {
+      if (ev.pointerId !== lookPointerId) return;
+      ev.preventDefault();
+      const dx = ev.clientX - lookLastX;
+      const dy = ev.clientY - lookLastY;
+      lookLastX = ev.clientX;
+      lookLastY = ev.clientY;
+
+      // свайп двигает камеру; чувствительность подобрана под тач
+      playerBody.yaw -= dx * 0.005;
+      playerBody.pitch = clamp(
+        playerBody.pitch - dy * 0.005,
+        -FPS.maxPitch, FPS.maxPitch
+      );
+      updateFirstPersonCamera();
+    });
+
+    const lookEnd = (ev) => {
+      if (ev.pointerId !== lookPointerId) return;
+      lookPointerId = null;
+    };
+    lookEl.addEventListener("pointerup", lookEnd);
+    lookEl.addEventListener("pointercancel", lookEnd);
+
+    // Кнопка удара: удержание + свайп двигает ракетку
+    const btnHit = $("btnHit");
+    btnHit.addEventListener("pointerdown", (ev) => {
+      if (!matchStarted || gamePaused) return;
+      ev.preventDefault();
+      racketPointerId = ev.pointerId;
+      racketLastX = ev.clientX;
+      racketLastY = ev.clientY;
+      isSwinging = true;
+      btnHit.setPointerCapture(ev.pointerId);
+    });
+
+    btnHit.addEventListener("pointermove", (ev) => {
+      if (ev.pointerId !== racketPointerId) return;
+      ev.preventDefault();
+      const dx = ev.clientX - racketLastX;
+      const dy = ev.clientY - racketLastY;
+      racketLastX = ev.clientX;
+      racketLastY = ev.clientY;
+
+      racketTarget.x = clamp(
+        racketTarget.x + dx * FPS.racketSensitivity * 1.4,
+        -FPS.racketRangeX, FPS.racketRangeX
+      );
+      racketTarget.y = clamp(
+        racketTarget.y - dy * FPS.racketSensitivity * 1.4,
+        -FPS.racketRangeY, FPS.racketRangeY
+      );
+    });
+
+    const hitEnd = (ev) => {
+      if (ev.pointerId !== racketPointerId) return;
+      racketPointerId = null;
+      isSwinging = false;
+    };
+    btnHit.addEventListener("pointerup", hitEnd);
+    btnHit.addEventListener("pointercancel", hitEnd);
+
+    // Кнопка прыжка
+    $("btnJump").addEventListener("pointerdown", (ev) => {
+      if (!matchStarted || gamePaused) return;
+      ev.preventDefault();
+      if (playerBody.grounded) {
+        playerBody.grounded = false;
+        playerBody.jumpVelocity = FPS.jumpSpeed;
+      }
+    });
+
+    // Кнопка паузы
+    $("btnPause").addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      if (!matchStarted) return;
+      if (gamePaused) resumeGame();
+      else pauseGame();
+    });
+
+    // --------------------------------------------------
+    // КАМЕРА / РАКЕТКА / ДВИЖЕНИЕ
+    // --------------------------------------------------
+
+    function updateFirstPersonCamera() {
+      camera.position.set(
+        playerBody.position.x,
+        FPS.eyeHeight + playerBody.jumpHeight,
+        playerBody.position.z
+      );
+      camera.rotation.set(playerBody.pitch, playerBody.yaw, 0, "YXZ");
+      camera.updateMatrixWorld(true);
+    }
+
+    function updatePlayerRacket(dt, immediate = false) {
+      if (!isSwinging) {
+        const returnFollow = 1 - Math.exp(-FPS.racketReturnSpeed * dt);
+        racketTarget.lerp(new THREE.Vector2(0, 0), returnFollow);
+      }
+
+      const follow = immediate ? 1 : 1 - Math.exp(-FPS.racketFollowSpeed * dt);
+      racketOffset.lerp(racketTarget, follow);
+
+      localRacketPosition.set(
+        FPS.racketRestX + racketOffset.x,
+        FPS.racketRestY + racketOffset.y,
+        -FPS.racketDistance
+      );
+
+      desiredRacketPosition
+        .copy(localRacketPosition)
+        .applyQuaternion(camera.quaternion)
+        .add(camera.position);
+
+      desiredRacketPosition.x = clamp(desiredRacketPosition.x, -CFG.halfWidth + 0.25, CFG.halfWidth - 0.25);
+      desiredRacketPosition.y = clamp(desiredRacketPosition.y, 0.5, 5);
+      desiredRacketPosition.z = clamp(desiredRacketPosition.z, 0.3, CFG.halfLength - 0.25);
+
+      player.root.position.copy(desiredRacketPosition);
+    }
+
+    function resetFirstPerson() {
+      clearPlayerInput();
+      playerBody.position.set(0, 0, Math.min(CFG.playerZ + 1.1, FPS.maxZ));
+      playerBody.yaw = 0;
+      playerBody.pitch = -0.08;
+      playerBody.jumpHeight = 0;
+      playerBody.jumpVelocity = 0;
+      playerBody.grounded = true;
+      racketTarget.set(0, 0);
+      racketOffset.set(0, 0);
+      player.impact = 0;
+      player.swing.rotation.set(0, 0, 0);
+      updateFirstPersonCamera();
+      updatePlayerRacket(0, true);
+    }
+
+    function movePlayer(dt) {
+      if (!matchStarted || gamePaused) {
+        updateFirstPersonCamera();
+        updatePlayerRacket(dt);
+        return;
+      }
+
+      // Ввод с клавиатуры
+      let inputX = Number(pressedKeys.has("KeyD") || pressedKeys.has("ArrowRight"))
+                 - Number(pressedKeys.has("KeyA") || pressedKeys.has("ArrowLeft"));
+      let inputForward = Number(pressedKeys.has("KeyW") || pressedKeys.has("ArrowUp"))
+                       - Number(pressedKeys.has("KeyS") || pressedKeys.has("ArrowDown"));
+
+      // Ввод с джойстика (приоритетнее, если активен)
+      if (joy.active) {
+        inputX = joy.x;
+        inputForward = -joy.y;
+      }
+
+      const inputLength = Math.hypot(inputX, inputForward);
+      if (inputLength > 0) {
+        inputX /= inputLength;
+        inputForward /= inputLength;
+      }
+
+      const sin = Math.sin(playerBody.yaw);
+      const cos = Math.cos(playerBody.yaw);
+
+      const desiredVX = (inputX * cos - inputForward * sin) * FPS.moveSpeed;
+      const desiredVZ = (-inputX * sin - inputForward * cos) * FPS.moveSpeed;
+
+      const response = inputLength > 0 ? FPS.acceleration : FPS.braking;
+      const follow = 1 - Math.exp(-response * dt);
+
+      playerBody.velocity.x += (desiredVX - playerBody.velocity.x) * follow;
+      playerBody.velocity.z += (desiredVZ - playerBody.velocity.z) * follow;
+
+      playerBody.position.x += playerBody.velocity.x * dt;
+      playerBody.position.z += playerBody.velocity.z * dt;
+
+      const minX = -CFG.halfWidth + FPS.bodyRadius;
+      const maxX = CFG.halfWidth - FPS.bodyRadius;
+
+      if (playerBody.position.x < minX) {
+        playerBody.position.x = minX;
+        playerBody.velocity.x = Math.max(0, playerBody.velocity.x);
+      } else if (playerBody.position.x > maxX) {
+        playerBody.position.x = maxX;
+        playerBody.velocity.x = Math.min(0, playerBody.velocity.x);
+      }
+
+      if (playerBody.position.z < FPS.minZ) {
+        playerBody.position.z = FPS.minZ;
+        playerBody.velocity.z = Math.max(0, playerBody.velocity.z);
+      } else if (playerBody.position.z > FPS.maxZ) {
+        playerBody.position.z = FPS.maxZ;
+        playerBody.velocity.z = Math.min(0, playerBody.velocity.z);
+      }
+
+      if (!playerBody.grounded) {
+        playerBody.jumpVelocity -= FPS.jumpGravity * dt;
+        playerBody.jumpHeight += playerBody.jumpVelocity * dt;
+        if (playerBody.jumpHeight <= 0) {
+          playerBody.jumpHeight = 0;
+          playerBody.jumpVelocity = 0;
+          playerBody.grounded = true;
+        }
+      }
+
+      updateFirstPersonCamera();
+      updatePlayerRacket(dt);
+    }
+
+    function updateRacketLean(paddle, dt) {
+      let desiredLean;
+      if (paddle === player) {
+        const side = clamp(racketOffset.x / FPS.racketRangeX, -1, 1);
+        desiredLean = -side * 0.95;
+      } else {
+        let side = clamp(paddle.root.position.x / CFG.racketLeanZone, -1, 1);
+        side = side * (1.5 - 0.5 * side * side);
+        desiredLean = -side * CFG.racketLeanAngle;
+      }
+      const follow = 1 - Math.exp(-CFG.racketLeanSpeed * dt);
+      paddle.swing.rotation.z += (desiredLean - paddle.swing.rotation.z) * follow;
+    }
+
+    // --------------------------------------------------
+    // СЧЁТ
+    // --------------------------------------------------
+
+    let playing = false;
+    let lastHitter = 1;
+    let receivingSide = 0;
+    let bounces = 0;
+    let landed = false;
+    let crossedNet = false;
+    let shotAge = 0;
+    let nextServe = 0;
+    let server = 0;
+
+    const points = [0, 0];
+    const games = [0, 0];
+
+    const sideOf = (z) => z >= 0 ? 0 : 1;
+
+    function updateScore() {
+      const names = ["0", "15", "30", "40"];
+      let a, b;
+      if (points[0] >= 3 && points[1] >= 3) {
+        a = points[0] > points[1] ? "AD" : "40";
+        b = points[1] > points[0] ? "AD" : "40";
+      } else {
+        a = names[Math.min(points[0], 3)];
+        b = names[Math.min(points[1], 3)];
+      }
+      $("score").textContent = `ТЫ ${a} : ${b} СОПЕРНИК`;
+      $("games").textContent = `Геймы: ${games[0]} : ${games[1]}`;
+    }
+
+    function finishPoint(winner, reason) {
+      if (!playing) return;
+      playing = false;
+      points[winner]++;
+
+      log("events", `КОНЕЦ ОЧКА winner=${winner} reason="${reason}"`);
+
+      let gameWon = false;
+      if (points[winner] >= 4 && points[winner] - points[1 - winner] >= 2) {
+        games[winner]++;
+        points.fill(0);
+        server = 1 - server;
+        gameWon = true;
+      }
+      updateScore();
+      $("status").textContent =
+        `${winner === 0 ? "Твоё очко" : "Очко соперника"}: ${reason}` +
+        (gameWon ? " · Гейм!" : "");
+      nextServe = 2;
+    }
+
+    function launch(side, aimX, aimZ, flightTime) {
+      lastHitter = side;
+      receivingSide = 1 - side;
+      bounces = 0;
+      landed = false;
+      crossedNet = false;
+      shotAge = 0;
+
+      velocity.set(
+        (aimX - ball.position.x) / flightTime,
+        (CFG.radius - ball.position.y + 0.5 * CFG.gravity * flightTime ** 2) / flightTime,
+        (aimZ - ball.position.z) / flightTime
+      );
+    }
+
+    function serve() {
+      updateFirstPersonCamera();
+      updatePlayerRacket(0, true);
+
+      opponent.root.position.set(0, 1.4, CFG.opponentZ);
+
+      const source = server === 0 ? player : opponent;
+      ball.position.copy(source.root.position);
+      ball.position.z += server === 0 ? -0.3 : 0.3;
+
+      if (server === 0) ball.position.z = Math.max(0.35, ball.position.z);
+
+      launch(server, 0, server === 0 ? -5.5 : 5.5, 1.55);
+
+      playing = true;
+      nextServe = 0;
+      ballShadow.position.x = ball.position.x;
+      ballShadow.position.z = ball.position.z;
+
+      $("status").textContent = server === 0 ? "Твоя подача" : "Подача соперника";
+    }
+
+    function startMatch() {
+      if (!ready) return;
+
+      log("events", "СТАРТ МАТЧА");
+
+      points.fill(0);
+      games.fill(0);
+      server = 0;
+      nextServe = 0;
+      playing = false;
+      matchStarted = true;
+      gamePaused = false;
+
+      resetFirstPerson();
+      updateScore();
+      $("overlay").classList.add("hidden");
+
+      serve();
+      if (!IS_TOUCH) requestGamePointerLock();
+    }
+
+    $("start").addEventListener("click", () => {
+      if (!ready) return;
+      if (matchStarted) {
+        resumeGame();
+      } else {
+        startMatch();
+      }
+    });
+
+    // --------------------------------------------------
+    // ИИ
+    // --------------------------------------------------
+
+    function fold(value, limit) {
+      const span = limit * 2;
+      const wrapped = ((value + limit) % (span * 2) + span * 2) % (span * 2);
+      return wrapped <= span ? wrapped - limit : span * 3 - wrapped;
+    }
+
+    function moveOpponent(dt) {
+      let aimX = 0;
+      let aimY = 1.4;
+
+      if (playing && receivingSide === 1) {
+        const t = Math.abs(velocity.z) > 0.01
+          ? (CFG.opponentZ - ball.position.z) / velocity.z
+          : -1;
+
+        if (t > 0 && t < 3) {
+          aimX = fold(ball.position.x + velocity.x * t, CFG.halfWidth - CFG.radius);
+          let y = ball.position.y;
+          let vy = velocity.y;
+          for (let left = t; left > 0;) {
+            const step = Math.min(left, 1 / 120);
+            vy -= CFG.gravity * step;
+            y += vy * step;
+            if (y < CFG.radius) { y = CFG.radius; vy = Math.abs(vy) * CFG.floorBounce; }
+            left -= step;
+          }
+          aimY = y;
+        } else {
+          aimX = ball.position.x;
+          aimY = ball.position.y;
+        }
+      }
+
+      const destination = new THREE.Vector3(
+        clamp(aimX, -4.3, 4.3),
+        clamp(aimY, 0.55, 3.3),
+        CFG.opponentZ
+      );
+
+      const delta = destination.sub(opponent.root.position);
+      const distance = delta.length();
+      if (distance > 0) {
+        opponent.root.position.addScaledVector(
+          delta, Math.min(1, CFG.aiSpeed * dt / distance)
+        );
+      }
+    }
+
+    // --------------------------------------------------
+    // УДАРЫ
+    // --------------------------------------------------
+
+    function tryHit(side, oldBall, oldPaddle) {
+      if (side === 0 && !isSwinging) return;
+
+      if (!playing || receivingSide !== side || !crossedNet || shotAge < 0.15) return;
+
+      const paddle = side === 0 ? player : opponent;
+      const position = paddle.root.position;
+
+      const oldRelativeZ = oldBall.z - oldPaddle.z;
+      const newRelativeZ = ball.position.z - position.z;
+      const relativeTravelZ = newRelativeZ - oldRelativeZ;
+      if (Math.abs(relativeTravelZ) < 1e-6) return;
+
+      const t = -oldRelativeZ / relativeTravelZ;
+      if (t < 0 || t > 1) return;
+
+      const x = THREE.MathUtils.lerp(oldBall.x, ball.position.x, t);
+      const y = THREE.MathUtils.lerp(oldBall.y, ball.position.y, t);
+      const z = THREE.MathUtils.lerp(oldBall.z, ball.position.z, t);
+      const px = THREE.MathUtils.lerp(oldPaddle.x, position.x, t);
+      const py = THREE.MathUtils.lerp(oldPaddle.y, position.y, t);
+
+      const dx = x - px;
+      const dy = y - py;
+
+      const lean = paddle.swing.rotation.z;
+      const cos = Math.cos(lean);
+      const sin = Math.sin(lean);
+      const localX = cos * dx + sin * dy;
+      const localY = -sin * dx + cos * dy;
+
+      const ellip =
+        (localX / (CFG.hitWidth + CFG.radius)) ** 2 +
+        (localY / (CFG.hitHeight + CFG.radius)) ** 2;
+
+      if (ellip > 1) return;
+
+      ball.position.set(x, y, z);
+      paddle.impact = 1;
+
+      const aimX = side === 0
+        ? clamp(px * 0.45 + dx * 3, -4, 4)
+        : (Math.random() * 2 - 1) * 3.5;
+
+      const aimZ = side === 0
+        ? -(5 + Math.random() * 2.5)
+        : 5 + Math.random() * 2.5;
+
+      launch(side, aimX, aimZ, 1.45 + Math.random() * 0.2);
+    }
+
+    // --------------------------------------------------
+    // ФИЗИКА
+    // --------------------------------------------------
+
+    const oldBall = new THREE.Vector3();
+    const oldPlayer = new THREE.Vector3();
+    const oldOpponent = new THREE.Vector3();
+
+    function physics(dt) {
+      oldPlayer.copy(player.root.position);
+      oldOpponent.copy(opponent.root.position);
+
+      movePlayer(dt);
+      moveOpponent(dt);
+
+      for (const paddle of [player, opponent]) {
+        paddle.impact = Math.max(0, paddle.impact - dt * 5);
+        paddle.swing.rotation.x = paddle.impact * (paddle === player ? -0.4 : 0.4);
+        updateRacketLean(paddle, dt);
+      }
+
+      if (!playing) {
+        if (nextServe > 0) {
+          nextServe -= dt;
+          if (nextServe <= 0) serve();
+        }
+        return;
+      }
+
+      shotAge += dt;
+      oldBall.copy(ball.position);
+
+      velocity.y -= CFG.gravity * dt;
+      ball.position.addScaledVector(velocity, dt);
+      ball.rotation.x += dt * 5;
+      ball.rotation.y += dt * 7;
+
+      const aboveWall = ball.position.y - CFG.radius > CFG.wallHeight;
+      const nearSideWall = Math.abs(ball.position.x) > CFG.halfWidth - CFG.radius;
+      const nearBackWall = Math.abs(ball.position.z) > CFG.halfLength - CFG.radius;
+
+      if (aboveWall && (nearSideWall || nearBackWall)) {
+        finishPoint(1 - lastHitter, "мяч перелетел через стекло");
+        return;
+      }
+
+      tryHit(0, oldBall, oldPlayer);
+      tryHit(1, oldBall, oldOpponent);
+
+      const crossedMidline =
+        (oldBall.z > 0 && ball.position.z <= 0) ||
+        (oldBall.z < 0 && ball.position.z >= 0);
+
+      if (crossedMidline) {
+        const fraction = oldBall.z / (oldBall.z - ball.position.z);
+        const heightAtNet = THREE.MathUtils.lerp(oldBall.y, ball.position.y, fraction);
+
+        const goingToReceiver =
+          (lastHitter === 0 && oldBall.z > 0 && ball.position.z < 0) ||
+          (lastHitter === 1 && oldBall.z < 0 && ball.position.z > 0);
+
+        if (!goingToReceiver) {
+          finishPoint(lastHitter, "мяч пересёк сетку без удара");
+          return;
+        }
+
+        if (heightAtNet - CFG.radius <= CFG.netHeight) {
+          finishPoint(receivingSide, "мяч попал в сетку");
+          return;
+        }
+        crossedNet = true;
+      }
+
+      if (ball.position.y <= CFG.radius && velocity.y < 0) {
+        ball.position.y = CFG.radius;
+        velocity.y = Math.abs(velocity.y) * CFG.floorBounce;
+
+        const landingSide = sideOf(ball.position.z);
+
+        if (!crossedNet || landingSide !== receivingSide) {
+          finishPoint(receivingSide, "мяч приземлился не на той половине");
+          return;
+        }
+
+        if (bounces === 0) {
+          bounces = 1;
+          landed = true;
+        } else {
+          finishPoint(lastHitter, "мяч коснулся пола второй раз");
+          return;
+        }
+      }
+
+      const sideLimit = CFG.halfWidth - CFG.radius;
+      if (ball.position.x > sideLimit) {
+        if (!landed) { finishPoint(receivingSide, "мяч попал в стекло до пола"); return; }
+        ball.position.x = sideLimit;
+        velocity.x = -Math.abs(velocity.x) * CFG.glassBounce;
+      } else if (ball.position.x < -sideLimit) {
+        if (!landed) { finishPoint(receivingSide, "мяч попал в стекло до пола"); return; }
+        ball.position.x = -sideLimit;
+        velocity.x = Math.abs(velocity.x) * CFG.glassBounce;
+      }
+
+      const backLimit = CFG.halfLength - CFG.radius;
+      if (ball.position.z > backLimit) {
+        if (!landed) { finishPoint(receivingSide, "мяч попал в стекло до пола"); return; }
+        ball.position.z = backLimit;
+        velocity.z = -Math.abs(velocity.z) * CFG.glassBounce;
+      } else if (ball.position.z < -backLimit) {
+        if (!landed) { finishPoint(receivingSide, "мяч попал в стекло до пола"); return; }
+        ball.position.z = -backLimit;
+        velocity.z = Math.abs(velocity.z) * CFG.glassBounce;
+      }
+
+      ballShadow.position.x = ball.position.x;
+      ballShadow.position.z = ball.position.z;
+      const shadowScale = clamp(1 - ball.position.y * 0.08, 0.45, 1);
+      ballShadow.scale.setScalar(shadowScale);
+      ballShadow.material.opacity = clamp(0.32 - ball.position.y * 0.035, 0.08, 0.32);
+    }
+
+    // --------------------------------------------------
+    // РАЗМЕР / ОРИЕНТАЦИЯ
+    // --------------------------------------------------
+
+    function updateHelpText() {
+      $("help").textContent = IS_TOUCH
+        ? "Джойстик слева — ходьба · Свайп справа — обзор · HIT (удерживай + двигай) — ракетка · JUMP — прыжок"
+        : "WASD / стрелки — ходьба · Мышь — обзор · Зажми ЛКМ и двигай мышь — ракетка · Пробел — прыжок · R — новый матч · Esc — пауза";
+    }
+
+    function updateOrientationClass() {
+      const portrait = innerHeight > innerWidth;
+      document.body.classList.toggle("portrait", portrait);
+    }
+
+    function resize() {
+      camera.aspect = innerWidth / innerHeight;
+      camera.fov = (innerWidth / innerHeight < 0.8) ? 85 : 78;
+      camera.near = 0.05;
+      camera.updateProjectionMatrix();
+
+      renderer.setPixelRatio(Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2));
+      renderer.setSize(innerWidth, innerHeight);
+
+      updateFirstPersonCamera();
+      updateOrientationClass();
+    }
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("orientationchange", () => setTimeout(resize, 100));
+
+    // --------------------------------------------------
+    // ЗАПУСК
+    // --------------------------------------------------
+
+    const clock = new THREE.Clock();
+    const fixedStep = 1 / 120;
+    let accumulator = 0;
+
+    ball.position.set(0, 1.4, CFG.playerZ - 0.3);
+    ballShadow.position.set(0, 0.012, 0);
+
+    updateHelpText();
+    updateOrientationClass();
+    resize();
+
+    // стартовый текст под платформу
+    if (IS_TOUCH) {
+      $("message").textContent =
+        "Джойстик слева — ходьба. Свайп справа — обзор. " +
+        "Кнопка HIT: зажми и двигай палец — ракетка следует за пальцем. " +
+        "JUMP — прыжок. Играть удобнее в горизонтальном положении.";
+    }
+
+    log("load", "старт загрузки моделей…");
+    loadModels();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const frameDt = Math.min(clock.getDelta(), 0.05);
+
+      // Пауза = либо явная пауза, либо (на десктопе) потеря pointer lock
+      const paused = matchStarted && (gamePaused || (!IS_TOUCH && !hasPointerLock()));
+
+      if (paused) {
+        accumulator = 0;
+      } else {
+        accumulator += frameDt;
+        while (accumulator >= fixedStep) {
+          physics(fixedStep);
+          accumulator -= fixedStep;
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
