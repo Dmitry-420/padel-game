@@ -30,18 +30,6 @@
     }
     #score { font-size: 36px; margin-top: 12px; }
     #games, #status { margin-top: 8px; font-size: 14px; }
-    #help {
-      position: fixed;
-      bottom: 20px;
-      left: 16px;
-      right: 16px;
-      text-align: center;
-      font-size: 13px;
-      color: #c0d5da;
-      pointer-events: none;
-      text-shadow: 0 2px 6px black;
-      z-index: 2;
-    }
     #overlay {
       position: fixed;
       inset: 0;
@@ -87,25 +75,15 @@
 <body>
   <div id="hud">
     <div id="brand">PRONINE / PADEL</div>
-    <div id="score">ТЫ 0 : 0 СОПЕРНИК</div>
+    <div id="score">ТЫ 0 : 0 РОБОТ</div>
     <div id="games">Геймы: 0 : 0</div>
-    <div id="status">Загрузка моделей…</div>
-  </div>
-
-  <div id="help">
-    Мышь — положение ракетки · W / ↑ — к сетке ·
-    S / ↓ — к стеклу · Колесо — вперёд / назад ·
-    Пробел — новый матч
+    <div id="status"></div>
   </div>
 
   <div id="overlay">
     <div class="panel">
       <h1>Padel Rally</h1>
-      <p id="message">
-        Подставляй ракетку под мяч.
-        Можно отбивать с лёта или после одного отскока.
-        После пола мяч может отскочить от стекла.
-      </p>
+      <p id="message">Одиночный матч Padel.Pronine</p>
       <button id="start" disabled>Загрузка…</button>
     </div>
   </div>
@@ -136,7 +114,6 @@
       playerMinZ: 1.8,
       playerMaxZ: 8.8,
       playerMoveSpeed: 4.8,
-      wheelMoveStep: 0.65,
 
       racketLeanAngle: 1.25,
       racketLeanZone: 1.8,
@@ -181,7 +158,7 @@
 
     const LOG = {
       enabled: true,
-      state:     true,
+      state:     false,
       physics:   false,
       events:    true,
       load:      true,
@@ -222,20 +199,10 @@
     const v2 = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)})`;
 
     window.gameDebug = () => {
-      console.log("=== GAME STATE DUMP ===");
-      console.log("playing:", playing,
-                  "| lastHitter:", lastHitter,
-                  "| receivingSide:", receivingSide,
-                  "| server:", server);
-      console.log("bounces:", bounces,
-                  "| landed:", landed,
-                  "| crossedNet:", crossedNet,
-                  "| shotAge:", shotAge.toFixed(2),
-                  "| nextServe:", nextServe.toFixed(2));
+      console.log("playing:", playing, "| lastHitter:", lastHitter,
+                  "| receivingSide:", receivingSide, "| server:", server);
       console.log("ball pos:", v3(ball.position), "vel:", v3(velocity));
       console.log("player pos:", v3(player.root.position),
-                  "| target:", v2(target),
-                  "| targetDepth:", targetDepth.toFixed(2),
                   "| velX:", playerVelX.toFixed(2),
                   "| velY:", playerVelY.toFixed(2));
       console.log("opponent pos:", v3(opponent.root.position),
@@ -564,8 +531,7 @@
         log("load", "загрузка завершена, ready = true");
       } catch (error) {
         warn("load", "ошибка загрузки моделей:", error);
-        $("message").textContent =
-          "Не удалось загрузить ракетку. Проверь папку models.";
+        $("message").textContent = "Ошибка загрузки моделей";
         $("status").textContent = "Ошибка загрузки";
       }
     }
@@ -638,18 +604,6 @@
     window.addEventListener("blur", () => {
       pressedKeys.clear();
     });
-
-    renderer.domElement.addEventListener("wheel", (event) => {
-      event.preventDefault();
-
-      if (!playing || event.deltaY === 0) return;
-
-      targetDepth = clamp(
-        targetDepth + Math.sign(event.deltaY) * CFG.wheelMoveStep,
-        CFG.playerMinZ,
-        CFG.playerMaxZ
-      );
-    }, { passive: false });
 
     function movePlayer(dt) {
       if (playing) {
@@ -740,7 +694,7 @@
         b = names[Math.min(points[1], 3)];
       }
 
-      $("score").textContent = `ТЫ ${a} : ${b} СОПЕРНИК`;
+      $("score").textContent = `ТЫ ${a} : ${b} РОБОТ`;
       $("games").textContent = `Геймы: ${games[0]} : ${games[1]}`;
     }
 
@@ -752,12 +706,7 @@
       log("events",
         `КОНЕЦ ОЧКА winner=${winner} reason="${reason}"`,
         "ball=", v3(ball.position),
-        "vel=", v3(velocity),
-        "lastHitter=", lastHitter,
-        "receivingSide=", receivingSide,
-        "bounces=", bounces,
-        "landed=", landed,
-        "crossedNet=", crossedNet);
+        "vel=", v3(velocity));
 
       let gameWon = false;
 
@@ -775,7 +724,7 @@
       updateScore();
 
       $("status").textContent =
-        `${winner === 0 ? "Твоё очко" : "Очко соперника"}: ${reason}` +
+        `${winner === 0 ? "Очко игроку" : "Очко роботу"}` +
         (gameWon ? " · Гейм!" : "");
 
       nextServe = 2;
@@ -818,12 +767,10 @@
 
       log("events", `ПОДАЧА server=${server}`,
           "ball=", v3(ball.position),
-          "vel=", v3(velocity),
-          "player=", v3(player.root.position),
-          "opponent=", v3(opponent.root.position));
+          "vel=", v3(velocity));
 
       $("status").textContent =
-        server === 0 ? "Твоя подача" : "Подача соперника";
+        server === 0 ? "Подача игрока" : "Подача робота";
     }
 
     function startMatch() {
@@ -1115,26 +1062,6 @@
         updateRacketLean(paddle, dt);
       }
 
-      const now = performance.now();
-      if (LOG.state && now - lastStateLog > LOG.stateIntervalMs) {
-        lastStateLog = now;
-        log("state",
-          `playing=${playing}`,
-          `ball=${v3(ball.position)}`,
-          `vel=${v3(velocity)}`,
-          `player=${v3(player.root.position)}`,
-          `velX=${playerVelX.toFixed(2)}`,
-          `velY=${playerVelY.toFixed(2)}`,
-          `target=${v2(target)}`,
-          `targetDepth=${targetDepth.toFixed(2)}`,
-          `opponent=${v3(opponent.root.position)}`,
-          `aiLevel=${aiLevel.toFixed(2)}`,
-          `bounces=${bounces}`,
-          `landed=${landed}`,
-          `crossedNet=${crossedNet}`,
-          `shotAge=${shotAge.toFixed(2)}`);
-      }
-
       if (!playing) {
         if (nextServe > 0) {
           nextServe -= dt;
@@ -1151,18 +1078,12 @@
       ball.rotation.x += dt * 5;
       ball.rotation.y += dt * 7;
 
-      if (LOG.physics) {
-        log("physics", `step ball=${v3(ball.position)} vel=${v3(velocity)}`);
-      }
-
       const aboveWall = ball.position.y - CFG.radius > CFG.wallHeight;
       const nearSideWall = Math.abs(ball.position.x) > CFG.halfWidth - CFG.radius;
       const nearBackWall = Math.abs(ball.position.z) > CFG.halfLength - CFG.radius;
 
       if (aboveWall && (nearSideWall || nearBackWall)) {
-        log("events", `МЯЧ ВЫШЕ СТЕКЛА y=${ball.position.y.toFixed(2)}`,
-            `x=${ball.position.x.toFixed(2)} z=${ball.position.z.toFixed(2)}`);
-        finishPoint(1 - lastHitter, "мяч перелетел через стекло");
+        finishPoint(1 - lastHitter, "аут");
         return;
       }
 
@@ -1191,21 +1112,13 @@
             oldBall.z < 0 &&
             ball.position.z > 0);
 
-        log("events",
-          `ПЕРЕСЕЧЕНИЕ СЕТКИ`,
-          `oldZ=${oldBall.z.toFixed(2)} newZ=${ball.position.z.toFixed(2)}`,
-          `heightAtNet=${heightAtNet.toFixed(2)}`,
-          `netHeight=${CFG.netHeight}`,
-          `goingToReceiver=${goingToReceiver}`,
-          `lastHitter=${lastHitter}`);
-
         if (!goingToReceiver) {
-          finishPoint(lastHitter, "мяч пересёк сетку без удара");
+          finishPoint(lastHitter, "аут");
           return;
         }
 
         if (heightAtNet - CFG.radius <= CFG.netHeight) {
-          finishPoint(receivingSide, "мяч попал в сетку");
+          finishPoint(receivingSide, "сетка");
           return;
         }
 
@@ -1221,15 +1134,8 @@
 
         const landingSide = sideOf(ball.position.z);
 
-        log("events",
-          `ОТСКОК ОТ ПОЛА z=${ball.position.z.toFixed(2)}`,
-          `side=${landingSide}`,
-          `crossedNet=${crossedNet}`,
-          `receivingSide=${receivingSide}`,
-          `bounces=${bounces}`);
-
         if (!crossedNet || landingSide !== receivingSide) {
-          finishPoint(receivingSide, "мяч приземлился не на той половине");
+          finishPoint(receivingSide, "аут");
           return;
         }
 
@@ -1237,7 +1143,7 @@
           bounces = 1;
           landed = true;
         } else {
-          finishPoint(lastHitter, "мяч коснулся пола второй раз");
+          finishPoint(lastHitter, "двойной отскок");
           return;
         }
       }
@@ -1245,20 +1151,16 @@
       const sideLimit = CFG.halfWidth - CFG.radius;
 
       if (ball.position.x > sideLimit) {
-        log("events", `БОКОВОЕ СТЕКЛО справа x=${ball.position.x.toFixed(2)}`,
-            `landed=${landed}`);
         if (!landed) {
-          finishPoint(receivingSide, "мяч попал в стекло до пола");
+          finishPoint(receivingSide, "стекло");
           return;
         }
 
         ball.position.x = sideLimit;
         velocity.x = -Math.abs(velocity.x) * CFG.glassBounce;
       } else if (ball.position.x < -sideLimit) {
-        log("events", `БОКОВОЕ СТЕКЛО слева x=${ball.position.x.toFixed(2)}`,
-            `landed=${landed}`);
         if (!landed) {
-          finishPoint(receivingSide, "мяч попал в стекло до пола");
+          finishPoint(receivingSide, "стекло");
           return;
         }
 
@@ -1269,10 +1171,8 @@
       const backLimit = CFG.halfLength - CFG.radius;
 
       if (ball.position.z > backLimit) {
-        log("events", `ЗАДНЕЕ СТЕКЛО z=${ball.position.z.toFixed(2)}`,
-            `landed=${landed}`, `vel.z=${velocity.z.toFixed(2)}`);
         if (!landed) {
-          finishPoint(receivingSide, "мяч попал в стекло до пола");
+          finishPoint(receivingSide, "стекло");
           return;
         }
 
@@ -1285,10 +1185,8 @@
           bounces = 1;
         }
       } else if (ball.position.z < -backLimit) {
-        log("events", `ЗАДНЕЕ СТЕКЛО z=${ball.position.z.toFixed(2)}`,
-            `landed=${landed}`, `vel.z=${velocity.z.toFixed(2)}`);
         if (!landed) {
-          finishPoint(receivingSide, "мяч попал в стекло до пола");
+          finishPoint(receivingSide, "стекло");
           return;
         }
 
