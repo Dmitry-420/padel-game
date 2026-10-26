@@ -111,10 +111,6 @@
       playerZ: 7.1,
       opponentZ: -7.1,
 
-      playerMinZ: 1.8,
-      playerMaxZ: 8.8,
-      playerMoveSpeed: 4.8,
-
       racketLeanAngle: 1.25,
       racketLeanZone: 1.8,
       racketLeanSpeed: 10,
@@ -139,6 +135,9 @@
 
       courtFloorColor: "#3b0508",
     };
+
+    // Фиксированная глубина игрока — на 10% ближе к сетке от playerZ
+    const PLAYER_DEPTH = CFG.playerZ - CFG.playerZ * 0.10;
 
     const $ = (id) => document.getElementById(id);
     const clamp = THREE.MathUtils.clamp;
@@ -333,7 +332,7 @@
       return {root, swing, visual, impact: 0, name};
     }
 
-    const player = makePaddle(CFG.playerZ, "player");
+    const player = makePaddle(PLAYER_DEPTH, "player");
     const opponent = makePaddle(CFG.opponentZ, "opponent");
 
     const ball = new THREE.Group();
@@ -541,7 +540,6 @@
     // --------------------------------------------------
 
     const target = new THREE.Vector2(0, 1.4);
-    let targetDepth = CFG.playerZ;
 
     const pointer = new THREE.Vector2();
     let pointerActive = false;
@@ -549,17 +547,9 @@
     const raycaster = new THREE.Raycaster();
     const plane = new THREE.Plane(
       new THREE.Vector3(0, 0, 1),
-      -CFG.playerZ
+      -PLAYER_DEPTH
     );
     const intersection = new THREE.Vector3();
-
-    const pressedKeys = new Set();
-    const depthKeys = new Set([
-      "KeyW",
-      "KeyS",
-      "ArrowUp",
-      "ArrowDown",
-    ]);
 
     function updatePointerTarget() {
       if (!pointerActive) return;
@@ -590,44 +580,11 @@
     window.addEventListener("pointermove", rememberPointer);
     window.addEventListener("pointerdown", rememberPointer);
 
-    window.addEventListener("keydown", (event) => {
-      if (!depthKeys.has(event.code)) return;
-
-      event.preventDefault();
-      pressedKeys.add(event.code);
-    });
-
-    window.addEventListener("keyup", (event) => {
-      pressedKeys.delete(event.code);
-    });
-
-    window.addEventListener("blur", () => {
-      pressedKeys.clear();
-    });
-
     function movePlayer(dt) {
-      if (playing) {
-        const forward =
-          pressedKeys.has("KeyW") ||
-          pressedKeys.has("ArrowUp");
-
-        const backward =
-          pressedKeys.has("KeyS") ||
-          pressedKeys.has("ArrowDown");
-
-        const direction = Number(backward) - Number(forward);
-
-        targetDepth = clamp(
-          targetDepth + direction * CFG.playerMoveSpeed * dt,
-          CFG.playerMinZ,
-          CFG.playerMaxZ
-        );
-      }
-
       const follow = 1 - Math.exp(-25 * dt);
 
       player.root.position.z +=
-        (targetDepth - player.root.position.z) * follow;
+        (PLAYER_DEPTH - player.root.position.z) * follow;
 
       updatePointerTarget();
 
@@ -754,7 +711,7 @@
     }
 
     function serve() {
-      player.root.position.set(target.x, target.y, targetDepth);
+      player.root.position.set(target.x, target.y, PLAYER_DEPTH);
       opponent.root.position.set(0, 1.4, CFG.opponentZ);
 
       const source = server === 0 ? player : opponent;
@@ -778,8 +735,6 @@
       points.fill(0);
       games.fill(0);
       server = 0;
-      targetDepth = CFG.playerZ;
-      pressedKeys.clear();
       aiLevel = 0.5;
       aiLevelTimer = 0;
       aiTargetTimer = 0;
@@ -889,7 +844,6 @@
           aimX = prediction.x + errX;
           aimY = prediction.y + errY;
 
-          // 10% шанс — ИИ вообще не туда бежит
           if (Math.random() < 0.10) {
             aimX += (Math.random() * 2 - 1) * 2.5;
           }
@@ -898,7 +852,6 @@
           aimY = ball.position.y;
         }
 
-        // ИИ физически не выше 2.5 — свечи перелетают его
         if (aimY > 2.5) aimY = 2.5;
 
         aiTargetCache.set(
@@ -948,7 +901,6 @@
       const y = THREE.MathUtils.lerp(oldBall.y, ball.position.y, t);
       const z = THREE.MathUtils.lerp(oldBall.z, ball.position.z, t);
 
-      // ИИ не дотягивается выше 2.7 — свечи пролетают мимо
       if (side === 1 && y > 2.7) {
         log("hits", `ИИ не дотянулся — мяч высоко y=${y.toFixed(2)}`);
         return;
@@ -990,7 +942,6 @@
       let flightTime;
 
       if (side === 0) {
-        // --- ФИЗИКА КАК В ПОНГЕ, УСИЛЕННАЯ ---
         const hitOffsetX = clamp(dx / CFG.hitWidth, -1, 1);
         const racketSwing = clamp(playerVelX / 3, -1, 1);
         const aimBias = px / CFG.halfWidth;
@@ -1043,8 +994,6 @@
     const oldBall = new THREE.Vector3();
     const oldPlayer = new THREE.Vector3();
     const oldOpponent = new THREE.Vector3();
-
-    let lastStateLog = 0;
 
     function physics(dt) {
       oldPlayer.copy(player.root.position);
@@ -1226,7 +1175,7 @@
       camera.fov = innerWidth / innerHeight < 0.8 ? 75 : 65; 
 
       camera.position.set(0, 3.0, 9.5); 
-      camera.lookAt(0, 1.2, CFG.playerZ - 3); 
+      camera.lookAt(0, 1.2, PLAYER_DEPTH - 3); 
 
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
@@ -1243,7 +1192,7 @@
     const fixedStep = 1 / 120;
     let accumulator = 0;
 
-    ball.position.set(0, 1.4, CFG.playerZ - 0.3);
+    ball.position.set(0, 1.4, PLAYER_DEPTH - 0.3);
     ballShadow.position.set(0, 0.012, 0);
 
     log("load", "старт загрузки моделей…");
