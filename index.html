@@ -145,7 +145,7 @@
       hitWidth: 0.75,
       hitHeight: 0.9,
 
-      aiSpeed: 4.2,
+      aiSpeed: 3.2,
 
       racketSize: 2.1,
       racketOffsetY: -0.4,
@@ -936,19 +936,27 @@
           const speedFactor = clamp((speed - 8) / 12, 0, 1);
           const errorScale = speedFactor * (1 - aiLevel);
 
-          const errX = (Math.random() * 2 - 1) * errorScale * 2.2;
-          const errY = (Math.random() * 2 - 1) * errorScale * 1.0;
+          const errX = (Math.random() * 2 - 1) * errorScale * 3.5;
+          const errY = (Math.random() * 2 - 1) * errorScale * 1.3;
 
           aimX = prediction.x + errX;
           aimY = prediction.y + errY;
+
+          // 10% шанс — ИИ вообще не туда бежит
+          if (Math.random() < 0.10) {
+            aimX += (Math.random() * 2 - 1) * 2.5;
+          }
         } else {
           aimX = ball.position.x;
           aimY = ball.position.y;
         }
 
+        // ИИ физически не выше 2.5 — свечи перелетают его
+        if (aimY > 2.5) aimY = 2.5;
+
         aiTargetCache.set(
           clamp(aimX, -4.3, 4.3),
-          clamp(aimY, 0.55, 3.3),
+          clamp(aimY, 0.55, 2.5),
           CFG.opponentZ
         );
       }
@@ -957,7 +965,7 @@
       const distance = delta.length();
 
       if (distance > 0) {
-        const speed = CFG.aiSpeed * (0.65 + 0.55 * aiLevel);
+        const speed = CFG.aiSpeed * (0.55 + 0.45 * aiLevel);
         opponent.root.position.addScaledVector(
           delta,
           Math.min(1, speed * dt / distance)
@@ -992,6 +1000,12 @@
       const x = THREE.MathUtils.lerp(oldBall.x, ball.position.x, t);
       const y = THREE.MathUtils.lerp(oldBall.y, ball.position.y, t);
       const z = THREE.MathUtils.lerp(oldBall.z, ball.position.z, t);
+
+      // ИИ не дотягивается выше 2.7 — свечи пролетают мимо
+      if (side === 1 && y > 2.7) {
+        log("hits", `ИИ не дотянулся — мяч высоко y=${y.toFixed(2)}`);
+        return;
+      }
 
       const px = THREE.MathUtils.lerp(oldPaddle.x, position.x, t);
       const py = THREE.MathUtils.lerp(oldPaddle.y, position.y, t);
@@ -1029,32 +1043,25 @@
       let flightTime;
 
       if (side === 0) {
-        // --- ФИЗИКА КАК В ПОНГЕ ---
-        // Угол по X определяется:
-        //  1) hitOffsetX — куда попал мяч по ракетке (край = угол)
-        //  2) racketSwing — куда движется ракетка в момент удара
-        //  3) aimBias — позиция ракетки по X
+        // --- ФИЗИКА КАК В ПОНГЕ, УСИЛЕННАЯ ---
         const hitOffsetX = clamp(dx / CFG.hitWidth, -1, 1);
-        const racketSwing = clamp(playerVelX / 8, -1, 1);
+        const racketSwing = clamp(playerVelX / 3, -1, 1);
         const aimBias = px / CFG.halfWidth;
 
         const angle = clamp(
-          hitOffsetX * 0.55 + racketSwing * 0.65 + aimBias * 0.35,
+          hitOffsetX * 0.8 + racketSwing * 0.9 + aimBias * 0.7,
           -1, 1
         );
 
-        // угол -> цель по X на стороне соперника
-        aimX = angle * (CFG.halfWidth - 0.4);
+        aimX = angle * (CFG.halfWidth - 0.2);
 
-        // Глубина: сверху (dy<0) — коротко, снизу (dy>0) — глубоко.
         const depthBias = clamp(-dy / CFG.hitHeight, -1, 1);
-        aimZ = -(6.5 + depthBias * 1.5 + Math.random() * 2.0);
+        aimZ = -(6.0 + depthBias * 2.0 + Math.random() * 2.5);
 
-        // Свеча: резко вверх или 12% шанс.
-        const isLob = playerVelY > 3.0 || Math.random() < 0.12;
+        const isLob = playerVelY > 2.0 || Math.random() < 0.15;
         flightTime = isLob
-          ? 2.1 + Math.random() * 0.7
-          : 1.4 + Math.random() * 0.25;
+          ? 2.0 + Math.random() * 0.6
+          : 1.35 + Math.random() * 0.2;
 
         log("hits",
           `PHYSICS hitOffsetX=${hitOffsetX.toFixed(2)}`,
@@ -1064,7 +1071,6 @@
           `aimX=${aimX.toFixed(2)} aimZ=${aimZ.toFixed(2)}`,
           `lob=${isLob}`);
       } else {
-        // ИИ
         aimX = (Math.random() * 2 - 1) * 4.5;
         aimZ = 6 + Math.random() * 4.2;
         flightTime = 1.45 + Math.random() * 0.2;
